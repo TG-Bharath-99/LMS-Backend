@@ -2,9 +2,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from database import engine  # Same folder import
-from models import Base
-from routes import router 
+from Backend.database import engine
+from Backend.models import Base
+from Backend.routes import router 
 
 Base.metadata.create_all(bind=engine)
 
