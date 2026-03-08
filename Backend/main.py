@@ -1,14 +1,32 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from Backend.database import engine
-from Backend.models import Base
-from Backend.routes import router 
+from Backend.database import engine, SessionLocal
+from Backend.models import Base, Course
+from Backend.routes import router
 
-Base.metadata.create_all(bind=engine)
+def seed_courses():
+    db = SessionLocal()
+    try:
+        if db.query(Course).count() == 0:
+            sample_courses = [
+                Course(title="Web Development Masterclass"),
+                Course(title="Data Science Fundamentals"),
+                Course(title="Python for Beginners"),
+                Course(title="JavaScript Advanced")
+            ]
+            db.add_all(sample_courses)
+            db.commit()
+    finally:
+        db.close()
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    seed_courses()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -17,13 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# FIXED: Frontend folder (capital F)
-app.mount("/static", StaticFiles(directory="../Frontend"), name="static")
-
-@app.get("/", include_in_schema=False)
-async def serve_frontend():
-    return FileResponse("../Frontend/index.html")
 
 app.include_router(router, prefix="/api")
 
