@@ -28,15 +28,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Allow all origins — required for Vercel serverless + Netlify frontend
+# If you want to restrict later, replace "*" with your Netlify URL:
+# "https://effervescent-dragon-b7f49f.netlify.app"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,   # Must be False when allow_origins=["*"]
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 app.include_router(router, prefix="/api")
+
+@app.get("/")
+async def root():
+    return {"status": "CoursePortal API is running"}
 
 @app.get("/health")
 async def health_check():
