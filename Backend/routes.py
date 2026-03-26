@@ -1,11 +1,14 @@
 from fastapi import APIRouter, HTTPException, Depends
 from Backend.database import SessionLocal
-from Backend.models import User, Course, Enrollment, CourseTopic
+from Backend.models import User, Course, Enrollment, CourseTopic, TopicProgress, LoginStreak
 from Backend.schemas import Signup, Login
 from Backend.security import hash_password, verify_password
 from Backend.auth import create_access_token, get_current_user
+from datetime import date
 
 router = APIRouter()
+
+# ─── Auth ────────────────────────────────────────────────────
 
 @router.post("/signup")
 def signup(user: Signup):
@@ -47,6 +50,8 @@ def login(user: Login):
 @router.get("/me")
 def get_my_profile(current_user: str = Depends(get_current_user)):
     return {"logged_in_as": current_user}
+
+# ─── Users ───────────────────────────────────────────────────
 
 @router.get("/users")
 def get_users(current_user: str = Depends(get_current_user)):
@@ -103,6 +108,8 @@ def delete_user(user_email: str, current_user: str = Depends(get_current_user)):
     finally:
         db.close()
 
+# ─── Courses ─────────────────────────────────────────────────
+
 @router.get("/courses")
 def get_courses():
     db = SessionLocal()
@@ -114,33 +121,19 @@ def get_courses():
     finally:
         db.close()
 
-# ✅ FIXED: Added missing endpoint
 @router.get("/courses/{course_id}/topics")
 def get_course_topics(course_id: int, current_user: str = Depends(get_current_user)):
-    """
-    Get all topics for a specific course.
-    Requires authentication to view topics.
-    """
     db = SessionLocal()
     try:
-        # Verify course exists
         course = db.query(Course).filter(Course.id == course_id).first()
         if not course:
             raise HTTPException(status_code=404, detail="Course not found")
-        
-        # Get all topics for this course
         topics = db.query(CourseTopic).filter(CourseTopic.course_id == course_id).all()
-        
         if not topics:
             return {"topics": []}
-        
         return {
             "topics": [
-                {
-                    "id": t.id,
-                    "title": t.title,
-                    "link": t.link
-                }
+                {"id": t.id, "title": t.title, "link": t.link}
                 for t in topics
             ]
         }
@@ -154,18 +147,15 @@ def enroll_course(course_id: int, current_user: str = Depends(get_current_user))
         user = db.query(User).filter(User.email == current_user).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        
         course = db.query(Course).filter(Course.id == course_id).first()
         if not course:
             raise HTTPException(status_code=404, detail="Course not found")
-        
         existing = db.query(Enrollment).filter(
             Enrollment.user_id == user.id,
             Enrollment.course_id == course_id
         ).first()
         if existing:
             raise HTTPException(status_code=400, detail="Already enrolled")
-        
         enrollment = Enrollment(user_id=user.id, course_id=course_id)
         db.add(enrollment)
         db.commit()
@@ -180,14 +170,107 @@ def my_courses(current_user: str = Depends(get_current_user)):
         user = db.query(User).filter(User.email == current_user).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        
         enrollments = db.query(Enrollment).filter(Enrollment.user_id == user.id).all()
         course_ids = [e.course_id for e in enrollments]
-        
         if not course_ids:
             return []
-        
         courses = db.query(Course).filter(Course.id.in_(course_ids)).all()
         return [{"id": c.id, "title": c.title} for c in courses]
+    finally:
+        db.close()
+
+# ─── Topic Progress (cross-device sync) ──────────────────────
+
+@router.post("/progress/{topic_id}")
+def mark_topic_complete(topic_id: int, current_user: str = Depends(get_current_user)):
+    """Mark a topic as completed — stored in DB so it syncs across all devices"""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == current_user).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        topic = db.query(CourseTopic).filter(CourseTopic.id == topic_id).first()
+        if not topic:
+            raise HTTPException(status_code=404, detail="Topic not found")
+
+        existing = db.query(TopicProgress).filter(
+            TopicProgress.user_id == user.id,
+            TopicProgress.topic_id == topic_id
+        ).first()
+
+        if existing:
+            return {"message": "Already marked complete"}
+
+        progress = TopicProgress(
+            user_id=user.id,
+            topic_id=topic_id,
+            course_id=topic.course_id
+        )
+        db.add(progress)
+        db.commit()
+        return {"message": "Topic marked as complete"}
+    finally:
+        db.close()
+
+@router.get("/progress/{course_id}")
+def get_course_progress(course_id: int, current_user: str = Depends(get_current_user)):
+    """Get list of completed topic IDs for a course — works on any device"""
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == current_user).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        completed = db.query(TopicProgress).filter(
+            TopicProgress.user_id == user.id,
+            TopicProgress.course_id == course_id
+        ).all()
+
+        return {"completed_topic_ids": [p.topic_id for p in completed]}
+    finally:
+        db.close()
+
+# ─── Real Login Streak ────────────────────────────────────────
+
+@router.post("/streak")
+def update_streak(current_user: str = Depends(get_current_user)):
+    """
+    Called on every login/dashboard load.
+    - Same day: no change
+    - Next day: streak + 1
+    - Missed a day: streak resets to 1
+    """
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == current_user).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        today = date.today()
+        streak_record = db.query(LoginStreak).filter(LoginStreak.user_id == user.id).first()
+
+        if not streak_record:
+            streak_record = LoginStreak(user_id=user.id, streak=1, last_login=today)
+            db.add(streak_record)
+        else:
+            if streak_record.last_login == today:
+                # Already logged in today — no change
+                return {"streak": streak_record.streak}
+            
+            from datetime import timedelta
+            yesterday = today - timedelta(days=1)
+            
+            if streak_record.last_login == yesterday:
+                # Consecutive day — increment
+                streak_record.streak += 1
+            else:
+                # Missed one or more days — reset
+                streak_record.streak = 1
+            
+            streak_record.last_login = today
+
+        db.commit()
+        return {"streak": streak_record.streak}
     finally:
         db.close()
