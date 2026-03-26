@@ -8,7 +8,6 @@ from datetime import date
 
 router = APIRouter()
 
-# ─── Auth ────────────────────────────────────────────────────
 
 @router.post("/signup")
 def signup(user: Signup):
@@ -51,7 +50,6 @@ def login(user: Login):
 def get_my_profile(current_user: str = Depends(get_current_user)):
     return {"logged_in_as": current_user}
 
-# ─── Users ───────────────────────────────────────────────────
 
 @router.get("/users")
 def get_users(current_user: str = Depends(get_current_user)):
@@ -108,7 +106,6 @@ def delete_user(user_email: str, current_user: str = Depends(get_current_user)):
     finally:
         db.close()
 
-# ─── Courses ─────────────────────────────────────────────────
 
 @router.get("/courses")
 def get_courses():
@@ -179,7 +176,6 @@ def my_courses(current_user: str = Depends(get_current_user)):
     finally:
         db.close()
 
-# ─── Topic Progress (cross-device sync) ──────────────────────
 
 @router.post("/progress/{topic_id}")
 def mark_topic_complete(topic_id: int, current_user: str = Depends(get_current_user)):
@@ -231,7 +227,6 @@ def get_course_progress(course_id: int, current_user: str = Depends(get_current_
     finally:
         db.close()
 
-# ─── Real Login Streak ────────────────────────────────────────
 
 @router.post("/streak")
 def update_streak(current_user: str = Depends(get_current_user)):
@@ -255,17 +250,14 @@ def update_streak(current_user: str = Depends(get_current_user)):
             db.add(streak_record)
         else:
             if streak_record.last_login == today:
-                # Already logged in today — no change
                 return {"streak": streak_record.streak}
             
             from datetime import timedelta
             yesterday = today - timedelta(days=1)
             
             if streak_record.last_login == yesterday:
-                # Consecutive day — increment
                 streak_record.streak += 1
             else:
-                # Missed one or more days — reset
                 streak_record.streak = 1
             
             streak_record.last_login = today

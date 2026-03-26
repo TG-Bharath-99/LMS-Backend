@@ -5,7 +5,6 @@ import os
 
 load_dotenv()
 
-# ✅ FIXED: Added validation for DATABASE_URL
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:

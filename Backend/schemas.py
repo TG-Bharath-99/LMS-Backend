@@ -13,7 +13,6 @@ class Signup(BaseModel):
     def validate_name(cls, v):
         if not v or not v.strip():
             raise ValueError('Name cannot be empty')
-        # Allow letters (any language), spaces, hyphens, apostrophes, dots
         if len(v.strip()) < 2:
             raise ValueError('Name must be at least 2 characters')
         return v.strip()

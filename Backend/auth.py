@@ -4,7 +4,6 @@ from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 import os
 
-# ✅ FIXED: Removed hardcoded fallback, enforce environment variable
 SECRET_KEY = os.getenv("SECRET_KEY")
 if not SECRET_KEY:
     raise ValueError(
